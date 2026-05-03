@@ -1,0 +1,11 @@
+# OS
+Thumbs.db
+Desktop.ini
+
+# Editors
+.vscode/
+.idea/
+
+# Shell noise
+*.tmp
+*.bak
