@@ -24,7 +24,9 @@ This repo was extracted from Windows support work done in the [`ccycv/openusage`
 ## Files
 
 - `Keep-CodexFast.ps1` - main Windows script
+- `Keep-CodexFast-GUI.ps1` - built-in Windows GUI
 - `keep-codex-fast.cmd` - simple Windows launcher
+- `keep-codex-fast-gui.cmd` - GUI launcher for normal Windows users
 - `keep-codex-fast-wsl.sh` - WSL helper
 
 ## Requirements
@@ -34,6 +36,18 @@ This repo was extracted from Windows support work done in the [`ccycv/openusage`
 - optional: Windows Task Scheduler if you want weekly automation
 
 ## Quick Start
+
+Open the Windows GUI:
+
+```powershell
+.\keep-codex-fast-gui.cmd
+```
+
+Or:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\Keep-CodexFast-GUI.ps1
+```
 
 Inspect only:
 
@@ -67,6 +81,8 @@ Close Codex first, then run:
 .\Keep-CodexFast.ps1 -Apply -IncludeWsl
 ```
 
+In the GUI, use `Inspect` first, then `Apply Cleanup`.
+
 Defaults:
 
 - keep last 10 days of active sessions
@@ -90,6 +106,8 @@ Install a Sunday scheduled task at `09:00`:
 ```powershell
 .\Keep-CodexFast.ps1 -InstallScheduledTask -IncludeWsl
 ```
+
+The GUI also includes an `Install Weekly Task` button.
 
 Change the time:
 
@@ -129,6 +147,7 @@ WSL backups:
 
 - no deletes
 - no process killing
+- the GUI uses built-in WinForms, so normal Windows machines do not need extra packages
 - SQLite files are backed up but not rotated as logs
 - handoff docs are mechanical, not AI summaries
 - secret auth/token files are not backed up unless `-IncludeSecretsBackup` is passed
