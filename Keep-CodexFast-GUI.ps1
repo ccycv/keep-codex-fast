@@ -62,6 +62,18 @@ function Build-Arguments {
   return ,$args
 }
 
+function Convert-ToProcessArguments {
+  param([string[]]$Values)
+
+  $encoded = foreach ($value in $Values) {
+    if ($null -eq $value) { '""'; continue }
+    if ($value -notmatch '[\s"]') { $value; continue }
+    '"' + ($value.Replace('"', '\"')) + '"'
+  }
+
+  return ($encoded -join " ")
+}
+
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Keep Codex Fast"
 $form.Size = New-Object System.Drawing.Size(820, 700)
@@ -278,10 +290,7 @@ function Start-Run {
     -LogRotateMb ([int]$logMb.Value) `
     -ScheduleTime "09:00"
 
-  $psi.ArgumentList.Clear()
-  foreach ($arg in $argList) {
-    [void]$psi.ArgumentList.Add([string]$arg)
-  }
+  $psi.Arguments = Convert-ToProcessArguments -Values $argList
 
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $psi

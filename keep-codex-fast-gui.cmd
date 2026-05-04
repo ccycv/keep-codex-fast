@@ -1,3 +1,3 @@
 @echo off
 set SCRIPT_DIR=%~dp0
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%Keep-CodexFast-GUI.ps1"
+start "" powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%SCRIPT_DIR%Keep-CodexFast-GUI.ps1"
