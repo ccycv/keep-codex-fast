@@ -10,8 +10,6 @@ Safe defaults:
 - refuse apply mode while Codex looks open
 - support Windows Codex state and WSL Codex state
 
-This repo was extracted from Windows support work done in the [`ccycv/openusage`](https://github.com/ccycv/openusage) fork.
-
 ## What It Helps With
 
 - large active chats slowing Codex down
