@@ -365,6 +365,18 @@ function Write-MarkdownReport {
   Set-Content -LiteralPath $Path -Value $lines -Encoding UTF8
 }
 
+function Convert-WindowsPathToWslPath {
+  param([string]$WindowsPath)
+
+  if ([string]::IsNullOrWhiteSpace($WindowsPath)) { return $null }
+  $normalized = $WindowsPath -replace "/", "\"
+  if ($normalized -notmatch "^([A-Za-z]):\\(.+)$") { return $null }
+
+  $drive = $Matches[1].ToLower()
+  $rest = $Matches[2] -replace "\\", "/"
+  return "/mnt/$drive/$rest"
+}
+
 function Invoke-WslMaintenance {
   param([string]$Distro, [bool]$DoApply, [int]$SessionDays, [int]$WorktreeDays, [int]$LogMB)
   $script = Join-Path $PSScriptRoot "keep-codex-fast-wsl.sh"
@@ -372,13 +384,13 @@ function Invoke-WslMaintenance {
     return [pscustomobject]@{ distro = $Distro; ok = $false; error = "Missing WSL script: $script" }
   }
   $applyValue = if ($DoApply) { "1" } else { "0" }
-  $scriptWslRaw = & wsl.exe -d $Distro -- wslpath -a $script 2>$null
-  if ($null -eq $scriptWslRaw) {
-    return [pscustomobject]@{ distro = $Distro; ok = $false; error = "Could not resolve script path through wslpath. Try running keep-codex-fast-wsl.sh inside WSL." }
+  $scriptWsl = Convert-WindowsPathToWslPath -WindowsPath $script
+  if ([string]::IsNullOrWhiteSpace($scriptWsl)) {
+    return [pscustomobject]@{ distro = $Distro; ok = $false; error = "Could not convert Windows script path to a WSL path: $script" }
   }
-  $scriptWsl = ($scriptWslRaw | Select-Object -First 1).Trim()
   $output = & wsl.exe -d $Distro -- env "CODEX_FAST_APPLY=$applyValue" "CODEX_FAST_SESSION_DAYS=$SessionDays" "CODEX_FAST_WORKTREE_DAYS=$WorktreeDays" "CODEX_FAST_LOG_MB=$LogMB" bash $scriptWsl 2>&1
-  $code = $LASTEXITCODE
+  $exitVar = Get-Variable -Name LASTEXITCODE -ErrorAction SilentlyContinue
+  $code = if ($exitVar) { [int]$exitVar.Value } else { 0 }
   return [pscustomobject]@{
     distro = $Distro
     ok = ($code -eq 0)
