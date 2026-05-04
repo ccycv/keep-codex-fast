@@ -6,6 +6,8 @@ Add-Type -AssemblyName System.Drawing
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $workerScript = Join-Path $scriptRoot "Keep-CodexFast.ps1"
 $script:lastReportPath = $null
+$script:currentOutputPath = $null
+$script:lastOutputText = ""
 
 function Open-PathIfExists {
   param([string]$Path)
@@ -72,6 +74,26 @@ function Convert-ToProcessArguments {
   }
 
   return ($encoded -join " ")
+}
+
+function Update-OutputFromFile {
+  if (-not $script:currentOutputPath) { return }
+  if (-not (Test-Path -LiteralPath $script:currentOutputPath)) { return }
+
+  $text = Get-Content -LiteralPath $script:currentOutputPath -Raw -ErrorAction SilentlyContinue
+  if ($null -eq $text) { return }
+  if ($text -eq $script:lastOutputText) { return }
+
+  $script:lastOutputText = $text
+  $outputBox.Text = $text
+  $outputBox.SelectionStart = $outputBox.TextLength
+  $outputBox.ScrollToCaret()
+
+  foreach ($line in ($text -split "`r?`n")) {
+    if ($line -like "Report:*") {
+      $script:lastReportPath = $line.Substring(7).Trim()
+    }
+  }
 }
 
 $form = New-Object System.Windows.Forms.Form
@@ -224,6 +246,40 @@ $footer.Size = New-Object System.Drawing.Size(760, 20)
 $form.Controls.Add($footer)
 
 $script:currentProcess = $null
+$pollTimer = New-Object System.Windows.Forms.Timer
+$pollTimer.Interval = 500
+
+$pollTimer.Add_Tick({
+  try {
+    Update-OutputFromFile
+    if ($script:currentProcess -and $script:currentProcess.HasExited) {
+      $pollTimer.Stop()
+      Set-UiBusy -Busy $false
+
+      if ($script:currentProcess.ExitCode -eq 0) {
+        switch ($script:currentMode) {
+          "task" { $statusLabel.Text = "Weekly task installed." }
+          "apply" { $statusLabel.Text = "Cleanup finished." }
+          default { $statusLabel.Text = "Inspect finished." }
+        }
+      } else {
+        $statusLabel.Text = "Finished with errors."
+      }
+
+      Update-OutputFromFile
+      if ($script:lastReportPath -and (Test-Path -LiteralPath $script:lastReportPath)) {
+        $outputBox.AppendText([Environment]::NewLine + "Latest report ready: $script:lastReportPath" + [Environment]::NewLine)
+      }
+      $script:currentProcess = $null
+    }
+  } catch {
+    $pollTimer.Stop()
+    Set-UiBusy -Busy $false
+    $statusLabel.Text = "GUI update failed."
+    $outputBox.AppendText([Environment]::NewLine + $_.Exception.Message + [Environment]::NewLine)
+    $script:currentProcess = $null
+  }
+})
 
 function Set-UiBusy {
   param([bool]$Busy)
@@ -267,14 +323,15 @@ function Start-Run {
 
   $outputBox.Clear()
   $script:lastReportPath = $null
+  $script:lastOutputText = ""
+  $script:currentOutputPath = Join-Path ([System.IO.Path]::GetTempPath()) ("keep-codex-fast-" + [guid]::NewGuid().ToString("N") + ".log")
+  Set-Content -LiteralPath $script:currentOutputPath -Value "" -Encoding UTF8
   $statusLabel.Text = if ($InstallTask) { "Installing weekly task..." } elseif ($Apply) { "Running cleanup..." } else { "Inspecting..." }
   Set-UiBusy -Busy $true
 
   $psi = New-Object System.Diagnostics.ProcessStartInfo
-  $psi.FileName = "powershell.exe"
+  $psi.FileName = "cmd.exe"
   $psi.UseShellExecute = $false
-  $psi.RedirectStandardOutput = $true
-  $psi.RedirectStandardError = $true
   $psi.CreateNoWindow = $true
   $psi.WorkingDirectory = $scriptRoot
 
@@ -290,60 +347,17 @@ function Start-Run {
     -LogRotateMb ([int]$logMb.Value) `
     -ScheduleTime "09:00"
 
-  $psi.Arguments = Convert-ToProcessArguments -Values $argList
+  $workerArgs = Convert-ToProcessArguments -Values $argList
+  $logPath = Convert-ToProcessArguments -Values @($script:currentOutputPath)
+  $psi.Arguments = "/d /c powershell.exe $workerArgs > $logPath 2>&1"
 
   $process = New-Object System.Diagnostics.Process
   $process.StartInfo = $psi
-  $process.EnableRaisingEvents = $true
 
-  $appendOutput = {
-    param([string]$Text)
-    if ([string]::IsNullOrWhiteSpace($Text)) { return }
-    if ($Text -like "Report:*") {
-      $script:lastReportPath = $Text.Substring(7).Trim()
-    }
-    $null = $outputBox.AppendText($Text + [Environment]::NewLine)
-  }
-
-  $process.add_OutputDataReceived({
-    param($sender, $eventArgs)
-    if ($eventArgs.Data -ne $null) {
-      $form.BeginInvoke($appendOutput, @($eventArgs.Data)) | Out-Null
-    }
-  })
-
-  $process.add_ErrorDataReceived({
-    param($sender, $eventArgs)
-    if ($eventArgs.Data -ne $null) {
-      $form.BeginInvoke($appendOutput, @($eventArgs.Data)) | Out-Null
-    }
-  })
-
-  $process.add_Exited({
-    $form.BeginInvoke([Action]{
-      Set-UiBusy -Busy $false
-      if ($process.ExitCode -eq 0) {
-        if ($InstallTask) {
-          $statusLabel.Text = "Weekly task installed."
-        } elseif ($Apply) {
-          $statusLabel.Text = "Cleanup finished."
-        } else {
-          $statusLabel.Text = "Inspect finished."
-        }
-      } else {
-        $statusLabel.Text = "Finished with errors."
-      }
-
-      if ($script:lastReportPath -and (Test-Path -LiteralPath $script:lastReportPath)) {
-        $null = $outputBox.AppendText([Environment]::NewLine + "Latest report ready: $script:lastReportPath" + [Environment]::NewLine)
-      }
-    }) | Out-Null
-  })
-
+  $script:currentMode = if ($InstallTask) { "task" } elseif ($Apply) { "apply" } else { "inspect" }
   $script:currentProcess = $process
   [void]$process.Start()
-  $process.BeginOutputReadLine()
-  $process.BeginErrorReadLine()
+  $pollTimer.Start()
 }
 
 $inspectButton.Add_Click({ Start-Run -Apply:$false -InstallTask:$false })
